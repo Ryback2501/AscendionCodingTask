@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 
 namespace BestStories.Api.IntegrationTests;
 
@@ -15,6 +16,13 @@ public sealed class BestStoriesApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder) =>
         builder.ConfigureTestServices(services =>
-            services.AddHttpClient<IHackerNewsClient, HackerNewsClient>()
-                .ConfigurePrimaryHttpMessageHandler(HackerNews.CreateHandler));
+        {
+            var clientBuilder = services.AddHttpClient<IHackerNewsClient, HackerNewsClient>()
+                .ConfigurePrimaryHttpMessageHandler(HackerNews.CreateHandler);
+
+            // Wait almost no time between retries, so the tests stay fast.
+            services.Configure<HttpStandardResilienceOptions>(
+                $"{clientBuilder.Name}-standard",
+                options => options.Retry.Delay = TimeSpan.FromMilliseconds(1));
+        });
 }

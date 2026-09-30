@@ -16,6 +16,9 @@ builder.Services.AddScoped<IBestStoriesService, BestStoriesService>();
 // Error answers use ProblemDetails: a standard JSON format for errors.
 builder.Services.AddProblemDetails();
 
+// When Hacker News is not available, answer 503 with a clear message.
+builder.Services.AddExceptionHandler<HackerNewsUnavailableExceptionHandler>();
+
 // OpenAPI makes a description of the API that tools and people can read.
 builder.Services.AddOpenApi();
 
