@@ -1,0 +1,12 @@
+# Files that Docker does not need to build the image.
+**/bin/
+**/obj/
+publish/
+tests/
+docs/
+.git/
+.github/
+.claude/
+CLAUDE.md
+*.plan.md
+README.md
