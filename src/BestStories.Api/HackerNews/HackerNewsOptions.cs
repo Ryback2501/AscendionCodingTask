@@ -10,7 +10,7 @@ public sealed class HackerNewsOptions
 {
     public const string SectionName = "HackerNews";
 
-    /// <summary>The address of the Hacker News API. It must end with "/".</summary>
+    /// <summary>The address of the Hacker News API.</summary>
     [Required]
     [Url]
     public string BaseUrl { get; set; } = "https://hacker-news.firebaseio.com/v0/";
