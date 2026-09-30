@@ -47,7 +47,7 @@ public class HackerNewsResilienceTests
             FakeHttpMessageHandler.Json("{}", HttpStatusCode.ServiceUnavailable));
         using var services = BuildServices(handler);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => services
+        await Assert.ThrowsAsync<HackerNewsUnavailableException>(() => services
             .GetRequiredService<IHackerNewsClient>()
             .GetBestStoryIdsAsync(CancellationToken.None));
 

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using BestStories.Api.HackerNews;
 
 namespace BestStories.Api.UnitTests.HackerNews;
@@ -67,9 +68,31 @@ public class HackerNewsClientTests
         var (client, _) = CreateClient(_ =>
             FakeHttpMessageHandler.Json("{}", HttpStatusCode.InternalServerError));
 
-        await Assert.ThrowsAsync<HttpRequestException>(
+        var error = await Assert.ThrowsAsync<HackerNewsUnavailableException>(
             () => client.GetItemAsync(1, CancellationToken.None));
-        await Assert.ThrowsAsync<HttpRequestException>(
+        Assert.IsType<HttpRequestException>(error.InnerException);
+        await Assert.ThrowsAsync<HackerNewsUnavailableException>(
             () => client.GetBestStoryIdsAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Throws_when_hacker_news_answers_with_broken_json()
+    {
+        var (client, _) = CreateClient(_ => FakeHttpMessageHandler.Json("{ this is not json"));
+
+        var error = await Assert.ThrowsAsync<HackerNewsUnavailableException>(
+            () => client.GetItemAsync(1, CancellationToken.None));
+        Assert.IsType<JsonException>(error.InnerException, exactMatch: false);
+    }
+
+    [Fact]
+    public async Task Does_not_hide_a_cancel_from_the_caller()
+    {
+        var (client, _) = CreateClient(_ => FakeHttpMessageHandler.Json("[]"));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.GetBestStoryIdsAsync(cancellation.Token));
     }
 }
