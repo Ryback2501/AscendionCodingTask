@@ -2,4 +2,8 @@
 
   <!-- The web API. Shared settings (like the .NET version) are in Directory.Build.props. -->
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+  </ItemGroup>
+
 </Project>
