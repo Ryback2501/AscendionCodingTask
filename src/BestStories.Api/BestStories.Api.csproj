@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The web API. Shared settings (like the .NET version) are in Directory.Build.props. -->
+
+</Project>
