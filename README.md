@@ -1,7 +1,7 @@
 # Hacker News Best Stories API
 
-> **Status: work in progress.** The base of the project is ready: the API starts, and it has a
-> health check. The endpoint that returns the best stories is not ready yet.
+> **Status: work in progress.** The API starts and has a health check. It also has the code that
+> reads stories from Hacker News. The endpoint that returns the best stories is not ready yet.
 
 ## What is this project?
 
@@ -48,9 +48,9 @@ dotnet build
 dotnet test
 ```
 
-`dotnet test` runs all the automatic tests. At the end, it must say `Passed!` and show no failed
-tests. (The unit test project has no tests yet, so for that project it says "No test is available".
-This is normal for now.)
+`dotnet test` runs all the automatic tests. At the end, it must say `Passed!` for each test
+project, and show no failed tests. The tests never call the real Hacker News. They use a fake
+Hacker News, so they work without internet.
 
 ## How to run the API
 
@@ -89,11 +89,50 @@ curl http://localhost:5000/health
 
 You should see: `Healthy`
 
+## Configuration
+
+The settings are in `src/BestStories.Api/appsettings.json`.
+
+| Setting | Default value | What it does |
+|---|---|---|
+| `HackerNews:BaseUrl` | `https://hacker-news.firebaseio.com/v0/` | The address of the Hacker News API. |
+
+If a setting is not valid (for example, `BaseUrl` is not a web address), the API does not start.
+It shows an error message that names the wrong setting.
+
+You can change a setting without editing the file. Use an environment variable (a setting of the
+terminal or the container). Write `__` (two underscores) in place of `:`. Examples:
+
+```bash
+# With .NET
+HackerNews__BaseUrl=https://hacker-news.firebaseio.com/v0/ dotnet run --project src/BestStories.Api
+
+# With Docker
+docker run --rm -p 8080:8080 -e HackerNews__BaseUrl=https://hacker-news.firebaseio.com/v0/ beststories-api
+```
+
+## How the API talks to Hacker News
+
+The API reads two things from Hacker News:
+
+- `beststories.json`: the IDs of the best stories (about 200 IDs).
+- `item/<id>.json`: the details of one story (title, address, author, time, score, number of comments).
+
+Sometimes a network call fails, or Hacker News is slow. The API uses the standard .NET protection
+for this (the `Microsoft.Extensions.Http.Resilience` package):
+
+- **Time limits:** each call has a maximum time. A call that takes too long stops.
+- **Retries:** when a call fails, the API tries again, up to 3 more times. It waits a little
+  longer before each new try.
+- **Circuit breaker:** when many calls fail, the API stops calling Hacker News for a short time.
+  This gives Hacker News time to recover, and our API answers faster instead of waiting.
+
 ## Project layout
 
 | Folder or file | What it has |
 |---|---|
 | `src/BestStories.Api/` | The code of the API. |
+| `src/BestStories.Api/HackerNews/` | The code that reads data from the Hacker News API. |
 | `tests/BestStories.Api.UnitTests/` | Tests for small parts of the code, one part at a time. |
 | `tests/BestStories.Api.IntegrationTests/` | Tests that start the whole API and call it over HTTP. |
 | `Directory.Build.props` | Settings for all projects, and the version number of the app. |
