@@ -50,6 +50,22 @@ public class HackerNewsRegistrationTests
             () => services.GetRequiredService<IOptions<HackerNewsOptions>>().Value);
     }
 
+    [Theory]
+    [InlineData("0")]
+    [InlineData("51")]
+    public void Rejects_a_parallel_limit_outside_1_to_50(string maxParallelRequests)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["HackerNews:MaxParallelRequests"] = maxParallelRequests })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddHackerNewsClient(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IOptions<HackerNewsOptions>>().Value);
+    }
+
     [Fact]
     public async Task Adds_the_missing_slash_at_the_end_of_the_address()
     {
