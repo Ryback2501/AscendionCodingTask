@@ -1,0 +1,20 @@
+<Project>
+  <!-- Settings for every project in this repository. -->
+  <PropertyGroup>
+    <!-- The version of the app. Change it only with /bump-version. -->
+    <VersionPrefix>0.1.0</VersionPrefix>
+
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Stop the build on any warning, and check the code style during the build. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <!-- Needed so the build can report unused "using" lines (rule IDE0005). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Do not ask for documentation comments on every public type. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+</Project>

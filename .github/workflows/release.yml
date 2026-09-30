@@ -1,10 +1,8 @@
 name: Release
 
 # Fires on every push to main (i.e. after a dev->main fast-forward). Tags the
-# version, builds & uploads release artifacts, creates the GitHub Release, and —
-# only when the matching repo variable is enabled — deploys to a host. This project
-# does not publish a Docker image. Generalized from Mockscii. Build/version surfaces are the only
-# stack-specific bits; publish/deploy stay gated so a fresh repo releases cleanly.
+# version, builds & uploads the release zip, and creates the GitHub Release.
+# Nothing else: this project has no deploy and does not publish a Docker image.
 
 on:
   push:
@@ -91,37 +89,3 @@ jobs:
           # Empty body — release notes are written by hand on the release page.
           gh release create "v$VERSION" --title "v$VERSION" --notes "" \
             "beststories-api-$VERSION.zip"
-
-  deploy:
-    name: Deploy (prod, gated)
-    needs: [github-release]
-    runs-on: ubuntu-latest
-    if: vars.PAGES_DEPLOY_ENABLED == 'true'
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-      - run: "dotnet restore"
-      - run: "dotnet publish src/BestStories.Api/BestStories.Api.csproj -c Release --no-restore -o publish"
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: publish
-      - id: deployment
-        uses: actions/deploy-pages@v5
-
-  deploy-disabled:
-    name: Deploy (prod, gated — DISABLED)
-    needs: [github-release]
-    runs-on: ubuntu-latest
-    if: vars.PAGES_DEPLOY_ENABLED != 'true'
-    steps:
-      - run: echo "PAGES_DEPLOY_ENABLED repo variable is not 'true' — deploy skipped."
