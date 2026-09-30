@@ -1,0 +1,117 @@
+name: CI jobs
+
+# Reusable CI. Called by pr-work-to-dev.yml and pr-dev-to-main.yml.
+# Generalized from Mockscii. The kick-off skill resolves every {{placeholder}}
+# from the chosen stack adapter and DELETES whole jobs that don't apply to the
+# project (e.g. a library with no docker image drops the `docker` job; a CLI may
+# drop `e2e`). Keep every job that survives wired into branch-protection's
+# required checks.
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: "dotnet restore"
+      - run: "dotnet format --verify-no-changes"
+
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: "dotnet restore"
+      - run: "dotnet test tests/BestStories.Api.UnitTests --no-restore"
+
+  # --- optional: delete if the project has no integration suite ---
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: "dotnet restore"
+      - run: "dotnet test tests/BestStories.Api.IntegrationTests --no-restore"
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: "dotnet restore"
+      - run: "dotnet publish src/BestStories.Api/BestStories.Api.csproj -c Release --no-restore -o publish"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: publish
+
+  # --- optional: delete if the project ships no container image ---
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build image
+        run: docker build -t beststories-api:ci .
+      - name: Run container
+        run: docker run -d --name beststories-api -p 8080:8080 beststories-api:ci
+      - name: Healthcheck
+        run: |
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:8080/health >/dev/null; then
+              echo "container is serving"; exit 0
+            fi
+            sleep 2
+          done
+          echo "container did not become healthy"; docker logs beststories-api; exit 1
+      - name: Stop container
+        if: always()
+        run: docker rm -f beststories-api || true
+
+  # --- optional: secret + dependency scan. Toggled by the SECURITY_SCAN repo
+  #     variable (flip it on without editing this file). When enabled, kick-off
+  #     adds `CI / security` to the branch-protection required checks so a finding
+  #     blocks merge. Deterministic tooling — no LLM in the loop. ---
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    if: vars.SECURITY_SCAN == 'true'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Personal accounts need no license; GitHub *orgs* require GITLEAKS_LICENSE.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Dependency vulnerability audit
+        run: |
+          dotnet restore && dotnet list package --vulnerable --include-transitive 2>&1 | tee /tmp/vuln.txt && ! grep -q 'has the following vulnerable' /tmp/vuln.txt
