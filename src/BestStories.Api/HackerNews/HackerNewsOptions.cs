@@ -28,4 +28,11 @@ public sealed class HackerNewsOptions
     /// </summary>
     [Range(1, 86400)]
     public int StoryCacheSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// How long (in seconds) we keep the sorted list of best stories in the cache.
+    /// During this time, all requests use the same list, and nobody calls Hacker News.
+    /// </summary>
+    [Range(1, 3600)]
+    public int BestStoriesCacheSeconds { get; set; } = 60;
 }

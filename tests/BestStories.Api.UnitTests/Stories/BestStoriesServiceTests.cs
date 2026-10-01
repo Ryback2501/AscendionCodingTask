@@ -15,10 +15,14 @@ public sealed class BestStoriesServiceTests : IDisposable
 
     public void Dispose() => _services.Dispose();
 
-    private BestStoriesService CreateService(int maxParallelRequests = 8) => new(
+    private BestStoriesService CreateService(int maxParallelRequests = 8, int bestStoriesCacheSeconds = 60) => new(
         _hackerNews,
         _services.GetRequiredService<HybridCache>(),
-        Options.Create(new HackerNewsOptions { MaxParallelRequests = maxParallelRequests }));
+        Options.Create(new HackerNewsOptions
+        {
+            MaxParallelRequests = maxParallelRequests,
+            BestStoriesCacheSeconds = bestStoriesCacheSeconds,
+        }));
 
     [Fact]
     public async Task Sorts_by_score_and_takes_n_stories()
@@ -138,6 +142,62 @@ public sealed class BestStoriesServiceTests : IDisposable
 
         Assert.Equal([30, 20, 10], stories.Select(story => story.Score));
         Assert.Equal(3, _hackerNews.ItemCallCount);
+    }
+
+    [Fact]
+    public async Task Many_calls_at_the_same_time_load_everything_only_once()
+    {
+        for (var id = 1; id <= 30; id++)
+        {
+            _hackerNews.AddStory(id, score: id);
+        }
+
+        _hackerNews.ItemDelay = TimeSpan.FromMilliseconds(20);
+        var service = CreateService();
+
+        var calls = Enumerable.Range(1, 50)
+            .Select(n => service.GetBestStoriesAsync(n % 30 + 1, CancellationToken.None));
+        var answers = await Task.WhenAll(calls);
+
+        Assert.All(answers, stories => Assert.Equal(30, stories[0].Score));
+        Assert.Equal(1, _hackerNews.IdCallCount);
+        Assert.Equal(30, _hackerNews.ItemCallCount);
+    }
+
+    [Fact]
+    public async Task Different_values_of_n_use_the_same_list()
+    {
+        for (var id = 1; id <= 10; id++)
+        {
+            _hackerNews.AddStory(id, score: id);
+        }
+
+        var service = CreateService();
+
+        var one = await service.GetBestStoriesAsync(1, CancellationToken.None);
+        var five = await service.GetBestStoriesAsync(5, CancellationToken.None);
+
+        Assert.Single(one);
+        Assert.Equal([10, 9, 8, 7, 6], five.Select(story => story.Score));
+        Assert.Equal(1, _hackerNews.IdCallCount);
+    }
+
+    [Fact]
+    public async Task After_the_list_time_ends_only_new_stories_are_loaded_from_hacker_news()
+    {
+        _hackerNews.AddStory(id: 1, score: 10);
+        _hackerNews.AddStory(id: 2, score: 20);
+        var service = CreateService(bestStoriesCacheSeconds: 1);
+        await service.GetBestStoriesAsync(10, CancellationToken.None);
+
+        // A new story comes into the Hacker News list. Then we wait until the list time ends.
+        _hackerNews.AddStory(id: 3, score: 30);
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+        var stories = await service.GetBestStoriesAsync(10, CancellationToken.None);
+
+        Assert.Equal([30, 20, 10], stories.Select(story => story.Score));
+        Assert.Equal(2, _hackerNews.IdCallCount);
+        Assert.Equal(3, _hackerNews.ItemCallCount); // Stories 1 and 2 came from the cache.
     }
 
     [Fact]

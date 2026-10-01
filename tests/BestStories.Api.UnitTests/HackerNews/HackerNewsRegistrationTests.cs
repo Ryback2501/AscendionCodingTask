@@ -55,6 +55,8 @@ public class HackerNewsRegistrationTests
     [InlineData("MaxParallelRequests", "51")]
     [InlineData("StoryCacheSeconds", "0")]
     [InlineData("StoryCacheSeconds", "86401")]
+    [InlineData("BestStoriesCacheSeconds", "0")]
+    [InlineData("BestStoriesCacheSeconds", "3601")]
     public void Rejects_a_number_outside_its_allowed_range(string setting, string value)
     {
         var configuration = new ConfigurationBuilder()

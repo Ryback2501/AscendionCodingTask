@@ -9,15 +9,36 @@ namespace BestStories.Api.Stories;
 /// Finds the best stories by score.
 /// Hacker News gives a list of "best" story IDs, but that list is not sorted by score.
 /// So we load every story in the list, and then we sort them by score ourselves.
-/// Each story stays in a cache (a short-term memory) for a while, so we do not ask
-/// Hacker News for the same story again and again.
+///
+/// To protect Hacker News, we use a cache (a short-term memory) at two levels:
+/// - the full sorted list of stories, for a short time (BestStoriesCacheSeconds),
+/// - each story, for a longer time (StoryCacheSeconds).
+/// So most requests do not call Hacker News at all.
 /// </summary>
 public sealed class BestStoriesService(
     IHackerNewsClient hackerNews,
     HybridCache cache,
     IOptions<HackerNewsOptions> options) : IBestStoriesService
 {
+    private const string BestStoriesCacheKey = "best-stories";
+
     public async Task<IReadOnlyList<BestStory>> GetBestStoriesAsync(int count, CancellationToken cancellationToken)
+    {
+        // When many requests arrive at the same time and the list is not in the cache,
+        // only one of them builds the list. The other requests wait for it.
+        var cacheTime = TimeSpan.FromSeconds(options.Value.BestStoriesCacheSeconds);
+        var rankedStories = await cache.GetOrCreateAsync(
+            BestStoriesCacheKey,
+            this,
+            static (service, token) => service.LoadRankedStoriesAsync(token),
+            new HybridCacheEntryOptions { Expiration = cacheTime, LocalCacheExpiration = cacheTime },
+            cancellationToken: cancellationToken);
+
+        return rankedStories.Stories.Take(count).ToList();
+    }
+
+    /// <summary>Loads all the best stories and sorts them by score, highest first.</summary>
+    private async ValueTask<RankedStories> LoadRankedStoriesAsync(CancellationToken cancellationToken)
     {
         var ids = await hackerNews.GetBestStoryIdsAsync(cancellationToken);
         var items = new HackerNewsItem?[ids.Count];
@@ -35,12 +56,13 @@ public sealed class BestStoriesService(
         });
 
         // OrderByDescending keeps the Hacker News order for stories with the same score.
-        return items
+        var stories = items
             .Where(IsRealStory)
             .OrderByDescending(item => item!.Score)
-            .Take(count)
             .Select(item => ToBestStory(item!))
             .ToList();
+
+        return new RankedStories(stories);
     }
 
     /// <summary>
