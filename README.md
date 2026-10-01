@@ -201,7 +201,7 @@ only the stories that are new in the list. The other stories come from the cache
 
 When many requests arrive at the same time and the list is not in the cache, only one request
 builds the list. The other requests wait for the same result. This is called "stampede protection".
-The cache library (`HybridCache`, from Microsoft) does this for us.
+The cache library (`HybridCache`, from Microsoft) does this.
 
 ### 4. Limits on the calls to Hacker News
 
@@ -210,21 +210,21 @@ The cache library (`HybridCache`, from Microsoft) does this for us.
 - **Retries:** when a call fails, the API tries again, up to 3 more times. It waits a little longer
   before each new try. (The `Microsoft.Extensions.Http.Resilience` package does this.)
 - **Circuit breaker:** when many calls fail, the API stops calling Hacker News for a short time.
-  This gives Hacker News time to recover, and our API answers faster instead of waiting.
+  This gives Hacker News time to recover, and the API answers faster instead of waiting.
 - **Errors are not kept in the cache.** If a call fails, the next request tries again.
 
 ### What this means in numbers
 
-We tested this with the real Hacker News, in Docker:
+I tested this with the real Hacker News, in Docker:
 
-| What we did | Result |
+| What I did | Result |
 |---|---|
 | First request (empty cache) | About 3.6 seconds. The API made 201 calls to Hacker News (1 for the IDs + 200 stories). |
 | Next requests (inside the 60 seconds) | About 7 milliseconds each. No calls to Hacker News. |
 | 500 more requests, 50 at the same time | All answered `200 OK`. Still no new calls to Hacker News. |
 
 So in one minute, the API makes at most about 200 calls to Hacker News (plus the retries when
-calls fail), and usually much fewer. The number of requests to our API does not change this.
+calls fail), and usually much fewer. The number of requests to the API does not change this.
 
 The API reads two things from Hacker News:
 
@@ -261,11 +261,45 @@ The API reads two things from Hacker News:
 - **All or nothing:** if the API cannot load one of the stories, even after 3 more tries, it
   answers `503`. It does not return a list with missing stories, because the order could be wrong.
 - **The data can be a little old.** The list can be up to 60 seconds old, and the score of a
-  story can be up to 5 minutes old. We think this is fine for a list of "best" stories, because
+  story can be up to 5 minutes old. I think this is fine for a list of "best" stories, because
   these scores change slowly. You can change both times in the settings.
 - **One copy of the API.** The cache is in the memory of the app. If you run many copies of the
   API, each copy has its own cache.
 
-## What we would add with more time
+## What I would add with more time
 
-Coming soon.
+### Serve more requests and protect Hacker News even more
+
+- **A shared cache for many copies of the API.** Today, each copy of the API has its own cache in
+  its memory. With a shared cache (for example Redis, as the second level of `HybridCache`), all
+  copies use the same cache. Then Hacker News gets one set of calls, not one set for each copy.
+- **Reload only the stories that changed.** Hacker News has an `updates` address that lists the
+  stories that changed. With it, the API could reload only these stories, not every story after
+  5 minutes.
+- **HTTP cache headers.** Headers like `Cache-Control` and `ETag` tell browsers and other servers
+  that they can keep the answer for a short time. Then fewer requests reach the API.
+- **A limit of requests for each client (rate limiting).** ASP.NET Core has a rate limiter. With
+  it, one client cannot send so many requests that the API becomes slow for everybody.
+- **Use old data when Hacker News is down.** Today, if Hacker News is down and the list is not in
+  the cache, the API answers `503`. It could keep the last good list for a longer time, and send
+  it (with a note that it is old) in place of an error.
+- **Load tests in the automatic checks.** A load test sends many requests at the same time (for
+  example with the tools k6 or NBomber). It would check on every change that many requests still
+  make only a few calls to Hacker News.
+
+### Other improvements
+
+- **Refresh the list in the background.** A background job could build the list when the API
+  starts, and build it again before the cache time ends. Then no user waits about 4 seconds for
+  the first answer. Note: this makes answers faster, but it does **not** reduce the calls to
+  Hacker News. The API would call Hacker News even when nobody uses it.
+- **Monitoring.** With OpenTelemetry (a standard way to collect measurements), I could see the
+  number of cache hits, the number of calls to Hacker News, and the answer times. Note: this does
+  **not** reduce the calls to Hacker News, but it lets me see and prove how many calls the API
+  makes, and send a warning if this number grows.
+- **A health check for Hacker News.** Today, `/health` only says that the API is running. A second
+  check could also test if Hacker News answers.
+- **An interactive API page.** Tools like Swagger UI or Scalar can show the OpenAPI description as
+  a web page, where you can try the API in the browser.
+- **API versions.** An address like `/api/v1/stories/best` would let me change the API later
+  without breaking the programs that use the old version.
