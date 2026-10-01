@@ -1,9 +1,14 @@
+using System.ComponentModel;
+
 namespace BestStories.Api.HackerNews;
 
 /// <summary>
 /// One item from the Hacker News API, for example a story.
 /// Hacker News can leave out any field, so most fields can be empty (null).
+/// ImmutableObject(true) tells the cache that an item never changes, so the cache can
+/// give the same object again, without making a copy.
 /// </summary>
+[ImmutableObject(true)]
 public sealed record HackerNewsItem
 {
     public int Id { get; init; }

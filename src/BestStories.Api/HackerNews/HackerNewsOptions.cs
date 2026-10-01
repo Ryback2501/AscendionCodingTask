@@ -21,4 +21,11 @@ public sealed class HackerNewsOptions
     /// </summary>
     [Range(1, 50)]
     public int MaxParallelRequests { get; set; } = 8;
+
+    /// <summary>
+    /// How long (in seconds) we keep each story in the cache (a short-term memory).
+    /// During this time, we do not ask Hacker News for this story again.
+    /// </summary>
+    [Range(1, 86400)]
+    public int StoryCacheSeconds { get; set; } = 300;
 }

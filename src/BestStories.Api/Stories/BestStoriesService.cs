@@ -1,4 +1,6 @@
+using System.Globalization;
 using BestStories.Api.HackerNews;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Options;
 
 namespace BestStories.Api.Stories;
@@ -7,9 +9,13 @@ namespace BestStories.Api.Stories;
 /// Finds the best stories by score.
 /// Hacker News gives a list of "best" story IDs, but that list is not sorted by score.
 /// So we load every story in the list, and then we sort them by score ourselves.
+/// Each story stays in a cache (a short-term memory) for a while, so we do not ask
+/// Hacker News for the same story again and again.
 /// </summary>
-public sealed class BestStoriesService(IHackerNewsClient hackerNews, IOptions<HackerNewsOptions> options)
-    : IBestStoriesService
+public sealed class BestStoriesService(
+    IHackerNewsClient hackerNews,
+    HybridCache cache,
+    IOptions<HackerNewsOptions> options) : IBestStoriesService
 {
     public async Task<IReadOnlyList<BestStory>> GetBestStoriesAsync(int count, CancellationToken cancellationToken)
     {
@@ -25,7 +31,7 @@ public sealed class BestStoriesService(IHackerNewsClient hackerNews, IOptions<Ha
         };
         await Parallel.ForEachAsync(Enumerable.Range(0, ids.Count), parallelOptions, async (index, token) =>
         {
-            items[index] = await hackerNews.GetItemAsync(ids[index], token);
+            items[index] = await GetItemAsync(ids[index], token);
         });
 
         // OrderByDescending keeps the Hacker News order for stories with the same score.
@@ -35,6 +41,22 @@ public sealed class BestStoriesService(IHackerNewsClient hackerNews, IOptions<Ha
             .Take(count)
             .Select(item => ToBestStory(item!))
             .ToList();
+    }
+
+    /// <summary>
+    /// Gets one story from the cache. If the cache does not have it, loads it from Hacker News.
+    /// When many requests want the same story at the same time, only one of them calls Hacker News.
+    /// Errors are not kept in the cache, so the next request tries again.
+    /// </summary>
+    private ValueTask<HackerNewsItem?> GetItemAsync(int id, CancellationToken cancellationToken)
+    {
+        var cacheTime = TimeSpan.FromSeconds(options.Value.StoryCacheSeconds);
+        return cache.GetOrCreateAsync(
+            string.Create(CultureInfo.InvariantCulture, $"hn-item:{id}"),
+            (hackerNews, id),
+            static async (state, token) => await state.hackerNews.GetItemAsync(state.id, token),
+            new HybridCacheEntryOptions { Expiration = cacheTime, LocalCacheExpiration = cacheTime },
+            cancellationToken: cancellationToken);
     }
 
     private static bool IsRealStory(HackerNewsItem? item) =>
