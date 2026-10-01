@@ -1,8 +1,7 @@
 # Hacker News Best Stories API
 
-> **Status: work in progress.** The endpoint that returns the best stories works. The next step
-> is a cache (a short-term memory of answers). Without the cache, each request makes about 200
-> calls to Hacker News, and it takes a few seconds.
+> **Status:** the API works. It returns the best stories, and it uses a cache (a short-term memory
+> of answers) to protect Hacker News. The last step is a final review of this README.
 
 ## What is this project?
 
@@ -163,6 +162,8 @@ The settings are in `src/BestStories.Api/appsettings.json`.
 |---|---|---|
 | `HackerNews:BaseUrl` | `https://hacker-news.firebaseio.com/v0/` | The address of the Hacker News API. |
 | `HackerNews:MaxParallelRequests` | `8` | The highest number of calls to Hacker News at the same time (1 to 50). |
+| `HackerNews:BestStoriesCacheSeconds` | `60` | How long the API keeps the sorted list of best stories in the cache, in seconds (1 to 3600). |
+| `HackerNews:StoryCacheSeconds` | `300` | How long the API keeps each story in the cache, in seconds (1 to 86400). |
 
 If a setting is not valid (for example, `BaseUrl` is not a web address), the API does not start.
 It shows an error message that names the wrong setting.
@@ -178,21 +179,57 @@ HackerNews__BaseUrl=https://hacker-news.firebaseio.com/v0/ dotnet run --project 
 docker run --rm -p 8080:8080 -e HackerNews__BaseUrl=https://hacker-news.firebaseio.com/v0/ beststories-api
 ```
 
-## How the API talks to Hacker News
+## How the API protects Hacker News
+
+The task says that the API must answer many requests without sending too many requests to
+Hacker News. The API does this in four ways.
+
+### 1. A cache for the sorted list
+
+A cache is a short-term memory of answers. The API builds the full list of best stories, sorted by
+score, and keeps it in the cache for 60 seconds. During these 60 seconds, every request uses this
+list. It does not matter how many requests arrive, or which `n` they ask for. Nobody calls Hacker
+News.
+
+### 2. A cache for each story
+
+To build the list, the API needs about 200 stories. It keeps each story in the cache for 5 minutes.
+When the list is built again after 60 seconds, the API gets the IDs again (1 call), but it loads
+only the stories that are new in the list. The other stories come from the cache.
+
+### 3. Only one build at the same time
+
+When many requests arrive at the same time and the list is not in the cache, only one request
+builds the list. The other requests wait for the same result. This is called "stampede protection".
+The cache library (`HybridCache`, from Microsoft) does this for us.
+
+### 4. Limits on the calls to Hacker News
+
+- **Parallel limit:** the API makes at most 8 calls to Hacker News at the same time.
+- **Time limits:** each call has a maximum time. A call that takes too long stops.
+- **Retries:** when a call fails, the API tries again, up to 3 more times. It waits a little longer
+  before each new try. (The `Microsoft.Extensions.Http.Resilience` package does this.)
+- **Circuit breaker:** when many calls fail, the API stops calling Hacker News for a short time.
+  This gives Hacker News time to recover, and our API answers faster instead of waiting.
+- **Errors are not kept in the cache.** If a call fails, the next request tries again.
+
+### What this means in numbers
+
+We tested this with the real Hacker News, in Docker:
+
+| What we did | Result |
+|---|---|
+| First request (empty cache) | About 3.6 seconds. The API made 201 calls to Hacker News (1 for the IDs + 200 stories). |
+| Next requests (inside the 60 seconds) | About 7 milliseconds each. No calls to Hacker News. |
+| 500 more requests, 50 at the same time | All answered `200 OK`. Still no new calls to Hacker News. |
+
+So in one minute, the API makes at most about 200 calls to Hacker News (plus the retries when
+calls fail), and usually much fewer. The number of requests to our API does not change this.
 
 The API reads two things from Hacker News:
 
 - `beststories.json`: the IDs of the best stories (about 200 IDs).
 - `item/<id>.json`: the details of one story (title, address, author, time, score, number of comments).
-
-Sometimes a network call fails, or Hacker News is slow. The API uses the standard .NET protection
-for this (the `Microsoft.Extensions.Http.Resilience` package):
-
-- **Time limits:** each call has a maximum time. A call that takes too long stops.
-- **Retries:** when a call fails, the API tries again, up to 3 more times. It waits a little
-  longer before each new try.
-- **Circuit breaker:** when many calls fail, the API stops calling Hacker News for a short time.
-  This gives Hacker News time to recover, and our API answers faster instead of waiting.
 
 ## Project layout
 
@@ -223,6 +260,11 @@ for this (the `Microsoft.Extensions.Http.Resilience` package):
   to comments. It is `0` when Hacker News does not send it.
 - **All or nothing:** if the API cannot load one of the stories, even after 3 more tries, it
   answers `503`. It does not return a list with missing stories, because the order could be wrong.
+- **The data can be a little old.** The list can be up to 60 seconds old, and the score of a
+  story can be up to 5 minutes old. We think this is fine for a list of "best" stories, because
+  these scores change slowly. You can change both times in the settings.
+- **One copy of the API.** The cache is in the memory of the app. If you run many copies of the
+  API, each copy has its own cache.
 
 ## What we would add with more time
 
