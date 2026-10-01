@@ -51,12 +51,16 @@ public class HackerNewsRegistrationTests
     }
 
     [Theory]
-    [InlineData("0")]
-    [InlineData("51")]
-    public void Rejects_a_parallel_limit_outside_1_to_50(string maxParallelRequests)
+    [InlineData("MaxParallelRequests", "0")]
+    [InlineData("MaxParallelRequests", "51")]
+    [InlineData("StoryCacheSeconds", "0")]
+    [InlineData("StoryCacheSeconds", "86401")]
+    [InlineData("BestStoriesCacheSeconds", "0")]
+    [InlineData("BestStoriesCacheSeconds", "3601")]
+    public void Rejects_a_number_outside_its_allowed_range(string setting, string value)
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["HackerNews:MaxParallelRequests"] = maxParallelRequests })
+            .AddInMemoryCollection(new Dictionary<string, string?> { [$"HackerNews:{setting}"] = value })
             .Build();
         var services = new ServiceCollection();
         services.AddHackerNewsClient(configuration);

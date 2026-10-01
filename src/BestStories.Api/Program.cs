@@ -10,6 +10,9 @@ builder.Services.AddHealthChecks();
 // The client that reads stories from Hacker News.
 builder.Services.AddHackerNewsClient(builder.Configuration);
 
+// The cache (a short-term memory of answers). It keeps the data in the memory of the app.
+builder.Services.AddHybridCache();
+
 // The service that finds the best stories by score.
 builder.Services.AddScoped<IBestStoriesService, BestStoriesService>();
 

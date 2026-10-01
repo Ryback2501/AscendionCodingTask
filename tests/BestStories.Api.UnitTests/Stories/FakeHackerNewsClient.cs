@@ -10,6 +10,8 @@ public sealed class FakeHackerNewsClient : IHackerNewsClient
 {
     private readonly object _lock = new();
     private int _callsRunningNow;
+    private int _idCallCount;
+    private int _itemCallCount;
 
     public List<int> BestStoryIds { get; } = [];
 
@@ -21,6 +23,12 @@ public sealed class FakeHackerNewsClient : IHackerNewsClient
     /// <summary>When set, every item call throws this error.</summary>
     public Exception? ItemError { get; set; }
 
+    /// <summary>How many times the list of best story IDs was asked for.</summary>
+    public int IdCallCount => Volatile.Read(ref _idCallCount);
+
+    /// <summary>How many times an item was asked for (all IDs together).</summary>
+    public int ItemCallCount => Volatile.Read(ref _itemCallCount);
+
     /// <summary>The highest number of item calls that ran at the same time.</summary>
     public int MostCallsAtTheSameTime { get; private set; }
 
@@ -31,11 +39,15 @@ public sealed class FakeHackerNewsClient : IHackerNewsClient
         Items[id] = new HackerNewsItem { Id = id, Type = type, Title = $"Story {id}", Score = score };
     }
 
-    public Task<IReadOnlyList<int>> GetBestStoryIdsAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<int>>(BestStoryIds);
+    public Task<IReadOnlyList<int>> GetBestStoryIdsAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _idCallCount);
+        return Task.FromResult<IReadOnlyList<int>>([.. BestStoryIds]);
+    }
 
     public async Task<HackerNewsItem?> GetItemAsync(int id, CancellationToken cancellationToken)
     {
+        Interlocked.Increment(ref _itemCallCount);
         lock (_lock)
         {
             _callsRunningNow++;
